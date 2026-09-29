@@ -1,0 +1,428 @@
+// PoultryMax FMS — data model
+//
+// Two conventions run through this schema:
+//
+//   1. Money is always an integer count of minor units, never a float. The
+//      books are kept in Philippine pesos, whose minor unit is the sentimo;
+//      the `Cents` suffix is retained as the generic name for minor units so
+//      a misuse stays visible at the call site. Renaming nine columns and
+//      every call site would change nothing but the diff. Formatting happens
+//      once, in lib/format.ts.
+//
+//   2. SQLite has no native enum support in Prisma, so status-style columns are
+//      `String`. The permitted values are defined once as const objects in
+//      lib/constants.ts and the derived TypeScript unions are what application
+//      code uses — the database is the loose end, the types are the contract.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String  @id @default(cuid())
+  email        String  @unique
+  passwordHash String
+  name         String
+  role         String // ADMIN | APPROVER | CLERK | AUDITOR
+  title        String?
+  phone        String?
+  avatarColor  String  @default("#5C6470")
+  isActive     Boolean @default(true)
+
+  lastLoginAt           DateTime?
+  onboardingCompletedAt DateTime?
+  tourCompletedAt       DateTime?
+
+  notifyOnApproval Boolean @default(true)
+  notifyOnPayment  Boolean @default(true)
+  notifyWeekly     Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions        Session[]
+  createdInvoices Invoice[]      @relation("InvoiceCreatedBy")
+  approvalSteps   ApprovalStep[]
+  attachments     Attachment[]
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+  payments        Payment[]
+  paymentBatches  PaymentBatch[]
+
+  @@index([role])
+}
+
+/// Opaque session tokens. The cookie holds the raw token; only its SHA-256
+/// hash is stored, so a database leak does not hand over live sessions.
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+
+  userAgent  String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Vendors and invoices
+// ---------------------------------------------------------------------------
+
+model Vendor {
+  id        String  @id @default(cuid())
+  name      String
+  legalName String?
+  taxId     String?
+  email     String?
+  phone     String?
+  website   String?
+
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  province     String?
+  postalCode   String?
+  country      String  @default("Philippines")
+
+  paymentTerms         String  @default("NET_30") // NET_15 | NET_30 | NET_45 | NET_60 | DUE_ON_RECEIPT
+  defaultPaymentMethod String  @default("PESONET") // PESONET | INSTAPAY | RTGS | CHECK
+  bankName             String?
+  bankAccountLast4     String?
+
+  category String  @default("General")
+  status   String  @default("ACTIVE") // ACTIVE | INACTIVE | PENDING_REVIEW
+  notes    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices Invoice[]
+
+  @@index([status])
+  @@index([name])
+}
+
+model Invoice {
+  id            String @id @default(cuid())
+  invoiceNumber String
+  vendorId      String
+
+  status String @default("DRAFT") // DRAFT | PENDING_APPROVAL | APPROVED | REJECTED | SCHEDULED | PAID | VOID
+
+  issueDate DateTime
+  dueDate   DateTime
+  currency  String   @default("PHP")
+
+  subtotalCents   Int
+  taxCents        Int @default(0)
+  totalCents      Int
+  amountPaidCents Int @default(0)
+
+  // BIR sales breakdown. The three buckets sum to subtotalCents for every type
+  // but NON_VAT, which is in none of them. See lib/tax/vat.ts.
+  vatType             String  @default("VATABLE") // VATABLE | ZERO_RATED | EXEMPT | MIXED | NON_VAT
+  vatableSalesCents   Int     @default(0)
+  zeroRatedSalesCents Int     @default(0)
+  exemptSalesCents    Int     @default(0)
+  supplierTin         String? // As printed on this invoice, which can differ from Vendor.taxId by branch.
+  vatExemptionBasis   String?
+
+  poNumber    String?
+  description String?
+  glAccount   String?
+  costCenter  String?
+
+  createdById       String
+  requiredApprovals Int    @default(0)
+
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  paidAt          DateTime?
+
+  /// Mean per-field confidence from the reading pass, 0–1, weighted towards the
+  /// fields an approver acts on. Null when keyed by hand — which is what the
+  /// "Scanned" badge and the `source=scanned` filter actually test. The number
+  /// itself is deliberately never shown: it is the model's opinion of its own
+  /// fluency, not a measurement of whether it read the right characters.
+  ocrConfidence Float?
+  /// The whole reading, as JSON, plus the model that produced it. This held the
+  /// raw recognised text when a local OCR engine did the reading; a language
+  /// model returns structured data instead, so the structure is what is kept.
+  /// It is the evidence trail — without it this column would quietly go empty
+  /// and nobody would notice until an auditor needed it.
+  ocrRawText    String?
+
+  archivedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor        Vendor            @relation(fields: [vendorId], references: [id])
+  createdBy     User              @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  lineItems     InvoiceLineItem[]
+  attachments   Attachment[]
+  approvalSteps ApprovalStep[]
+  payments      Payment[]
+
+  /// A vendor cannot bill the same invoice number twice. This is the database
+  /// half of duplicate detection; the UI half warns before it gets here.
+  @@unique([vendorId, invoiceNumber])
+  @@index([status])
+  @@index([dueDate])
+  @@index([issueDate])
+  @@index([createdById])
+  @@index([archivedAt])
+}
+
+model InvoiceLineItem {
+  id             String  @id @default(cuid())
+  invoiceId      String
+  description    String
+  quantity       Float   @default(1)
+  unitPriceCents Int
+  amountCents    Int
+  glAccount      String?
+  sortOrder      Int     @default(0)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model Attachment {
+  id         String  @id @default(cuid())
+  invoiceId  String
+  filename   String
+  storedName String  @unique
+  mimeType   String
+  sizeBytes  Int
+  isPrimary  Boolean @default(false)
+
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  invoice    Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  uploadedBy User    @relation(fields: [uploadedById], references: [id])
+
+  @@index([invoiceId])
+}
+
+// ---------------------------------------------------------------------------
+// Approvals
+// ---------------------------------------------------------------------------
+
+/// One row per required sign-off, generated from ApprovalThreshold when an
+/// invoice is submitted. Steps are decided in `sequence` order.
+model ApprovalStep {
+  id           String    @id @default(cuid())
+  invoiceId    String
+  sequence     Int
+  requiredRole String    @default("APPROVER")
+  approverId   String?
+  status       String    @default("PENDING") // PENDING | APPROVED | REJECTED | SKIPPED
+  decidedAt    DateTime?
+  comment      String?
+  createdAt    DateTime  @default(now())
+
+  invoice  Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  approver User?   @relation(fields: [approverId], references: [id])
+
+  @@unique([invoiceId, sequence])
+  @@index([status])
+  @@index([approverId])
+}
+
+/// Admin-editable routing tiers. An invoice's total selects exactly one tier,
+/// which determines how many sequential sign-offs it needs.
+model ApprovalThreshold {
+  id                String  @id @default(cuid())
+  label             String
+  minCents          Int
+  /// Null means unbounded — the top tier.
+  maxCents          Int?
+  requiredApprovals Int     @default(1)
+  autoApprove       Boolean @default(false)
+  sortOrder         Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+
+model PaymentBatch {
+  id          String @id @default(cuid())
+  batchNumber String @unique
+  status      String @default("DRAFT") // DRAFT | SCHEDULED | PROCESSING | COMPLETED | FAILED
+  totalCents  Int    @default(0)
+  itemCount   Int    @default(0)
+
+  scheduledDate DateTime
+  executedDate  DateTime?
+
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User      @relation(fields: [createdById], references: [id])
+  payments  Payment[]
+
+  @@index([status])
+}
+
+model Payment {
+  id            String  @id @default(cuid())
+  paymentNumber String  @unique
+  invoiceId     String
+  batchId       String?
+
+  method      String // PESONET | INSTAPAY | RTGS | CHECK
+  amountCents Int
+  status      String @default("SCHEDULED") // SCHEDULED | PROCESSING | COMPLETED | FAILED | CANCELLED
+
+  scheduledDate DateTime
+  executedDate  DateTime?
+  reference     String?
+  memo          String?
+  failureReason String?
+
+  initiatedById String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  invoice     Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  batch       PaymentBatch? @relation(fields: [batchId], references: [id])
+  initiatedBy User          @relation(fields: [initiatedById], references: [id])
+
+  @@index([invoiceId])
+  @@index([status])
+  @@index([scheduledDate])
+}
+
+// ---------------------------------------------------------------------------
+// Audit, notifications, settings
+// ---------------------------------------------------------------------------
+
+/// Append-only. Nothing in the application updates or deletes an audit row.
+/// `actorName` and `actorRole` are denormalised so the trail stays readable
+/// after a user is renamed or deactivated.
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorId     String?
+  actorName   String
+  actorRole   String
+  action      String // INVOICE_CREATED, INVOICE_APPROVED, PAYMENT_EXECUTED, ...
+  entityType  String // Invoice | Vendor | Payment | User | Settings | Session
+  entityId    String
+  entityLabel String
+  summary     String
+  /// JSON blob of changed fields, {field: {from, to}}. SQLite has no JSON type.
+  metadata    String?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model Notification {
+  id      String    @id @default(cuid())
+  userId  String
+  type    String // APPROVAL_REQUESTED | INVOICE_APPROVED | INVOICE_REJECTED | PAYMENT_EXECUTED | INVOICE_OVERDUE | SYSTEM
+  title   String
+  body    String
+  linkUrl String?
+  readAt  DateTime?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+model OrgSettings {
+  id        String  @id @default("singleton")
+  orgName   String  @default("Apollo Financial Group")
+  legalName String?
+  taxId     String?
+
+  addressLine1 String?
+  city         String?
+  province     String?
+  postalCode   String?
+  country      String  @default("Philippines")
+
+  defaultCurrency      String @default("PHP")
+  fiscalYearStartMonth Int    @default(1)
+
+  /// AP controls. Both are enforced server-side on submit.
+  requireAttachmentOnSubmit Boolean @default(true)
+  duplicateDetection        Boolean @default(true)
+
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// SaaS subscription (simulated — no payment processor is contacted)
+// ---------------------------------------------------------------------------
+
+model Subscription {
+  id                 String   @id @default("singleton")
+  plan               String   @default("GROWTH") // STARTER | GROWTH | ENTERPRISE
+  status             String   @default("ACTIVE") // ACTIVE | PAST_DUE | CANCELLED | TRIALING
+  seats              Int      @default(10)
+  pricePerSeatCents  Int      @default(229900)
+  billingInterval    String   @default("MONTHLY") // MONTHLY | ANNUAL
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean  @default(false)
+
+  cardBrand String? @default("Visa")
+  cardLast4 String? @default("4242")
+
+  updatedAt DateTime @updatedAt
+
+  invoices SubscriptionInvoice[]
+}
+
+model SubscriptionInvoice {
+  id             String    @id @default(cuid())
+  subscriptionId String
+  number         String    @unique
+  amountCents    Int
+  status         String    @default("PAID") // PAID | OPEN | FAILED
+  periodStart    DateTime
+  periodEnd      DateTime
+  issuedAt       DateTime
+  paidAt         DateTime?
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+}

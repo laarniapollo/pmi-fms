@@ -1,0 +1,29 @@
+node_modules/
+.next/
+out/
+build/
+.DS_Store
+*.pem
+
+# env
+.env
+.env*.local
+
+# database
+data/*.db
+data/*.db-journal
+prisma/*.db
+
+# uploaded invoice attachments
+storage/uploads/*
+!storage/uploads/.gitkeep
+
+# logs
+npm-debug.log*
+yarn-error.log*
+*.tsbuildinfo
+next-env.d.ts
+
+# editors
+.idea/
+.vscode/

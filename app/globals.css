@@ -1,0 +1,193 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   PoultryMax FMS design tokens
+
+   Every colour in the application resolves to one of these. If a component
+   file contains a raw hex value, that is a defect — add a token here instead.
+
+   The palette is deliberately narrow. Emerald is the only high-chroma colour
+   and it is reserved for three jobs: primary actions, the completed/paid
+   state, and the active step of an approval. Status colours other than
+   emerald stay desaturated so they never compete with it, and they appear
+   only inside small badges — never as a surface fill.
+--------------------------------------------------------------------------- */
+
+@theme {
+  /* Surfaces */
+  --color-canvas: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #fafbfc;
+  --color-surface-hover: #f7f8f9;
+
+  /* Ink */
+  --color-ink: #1e2229;
+  --color-ink-muted: #5c6470;
+  --color-ink-subtle: #8a9099;
+  --color-ink-inverse: #ffffff;
+
+  /* Structure */
+  --color-line: #e2e6ea;
+  --color-line-strong: #ccd2d9;
+
+  /* Accent — emerald. Reserved. */
+  --color-accent: #168a48;
+  --color-accent-hover: #12733c;
+  --color-accent-active: #0f5f32;
+  --color-accent-soft: #d4f4e2;
+  --color-accent-ring: #168a4833;
+
+  /* Status — desaturated, badge-only */
+  --color-warn: #b45309;
+  --color-warn-soft: #fdf3e3;
+  --color-danger: #b42318;
+  --color-danger-hover: #9a1e14;
+  --color-danger-soft: #fdeceb;
+  --color-info: #3a5a8c;
+  --color-info-soft: #eaeff7;
+  --color-neutral: #5c6470;
+  --color-neutral-soft: #eef0f3;
+
+  /* Type — Inter carries the interface, IBM Plex Mono carries identifiers.
+     The split is semantic: anything a person would read aloud character by
+     character (invoice number, payment reference, tax ID) is mono; anything
+     with magnitude (amounts, dates, counts) is Inter with tabular figures. */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  --text-2xs: 0.6875rem; /* 11px — dense table meta */
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem; /* 12px — column headers, badges */
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.8125rem; /* 13px — tabular data, the workhorse size */
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem; /* 14px — body copy */
+  --text-base--line-height: 1.375rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.125rem;
+  --text-xl--line-height: 1.625rem;
+  --text-2xl: 1.375rem;
+  --text-2xl--line-height: 1.75rem;
+  --text-3xl: 1.75rem;
+  --text-3xl--line-height: 2.125rem;
+
+  /* Radii — tight. Crisp rectangular modules, never pill, never 12px+. */
+  --radius-sm: 3px;
+  --radius-DEFAULT: 4px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 6px;
+
+  /* Elevation — the ceiling. Structure comes from 1px strokes, not shadow. */
+  --shadow-flat: 0 1px 2px rgb(30 34 41 / 0.04);
+  --shadow-raised: 0 2px 6px rgb(30 34 41 / 0.06), 0 1px 2px rgb(30 34 41 / 0.04);
+  --shadow-overlay: 0 8px 28px rgb(30 34 41 / 0.12), 0 2px 6px rgb(30 34 41 / 0.06);
+
+  /* Shell metrics */
+  --spacing-sidebar: 232px;
+  --spacing-sidebar-collapsed: 56px;
+  --spacing-header: 52px;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv05" 1, "cv11" 1; /* single-storey l, disambiguated 1 */
+  }
+
+  /* Figures align in columns everywhere, without per-component opt-in. */
+  table,
+  input[type="number"],
+  time,
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: var(--color-ink);
+    font-weight: 600;
+    letter-spacing: -0.011em;
+  }
+
+  /* Keyboard focus is always visible; pointer focus never draws a ring. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+    border-radius: 2px;
+  }
+
+  ::placeholder {
+    color: var(--color-ink-subtle);
+  }
+
+  /* Thin, neutral scrollbars — a wide default bar breaks the density. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-line-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /* Column headers: 11px, uppercase, tracked. Used by every table. */
+  .col-head {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+    color: var(--color-ink-subtle);
+  }
+
+  /* Identifiers. See the semantic split noted in @theme. */
+  .ident {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: -0.01em;
+  }
+
+  /* The one place a gradient appears: masking a scrolled table's edge. */
+  .fade-right {
+    mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
