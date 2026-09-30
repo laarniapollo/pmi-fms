@@ -3,6 +3,8 @@ import {
   Banknote,
   Building2,
   CheckSquare,
+  ClipboardList,
+  FileCheck,
   FileText,
   LayoutDashboard,
   ScrollText,
@@ -73,6 +75,25 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/archive", label: "Archive", icon: Archive, action: "invoice:view" },
       { href: "/audit", label: "Audit log", icon: ScrollText, action: "audit:view" },
+    ],
+  },
+  {
+    label: "Procurement",
+    items: [
+      {
+        href: "/purchase-requests",
+        label: "Purchase Requests",
+        icon: ClipboardList,
+        action: "purchaseRequest:view",
+        matchPrefix: true,
+      },
+      {
+        href: "/purchase-orders",
+        label: "Purchase Orders",
+        icon: FileCheck,
+        action: "purchaseOrder:view",
+        matchPrefix: true,
+      },
     ],
   },
   {

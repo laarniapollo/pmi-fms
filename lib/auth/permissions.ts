@@ -37,7 +37,11 @@ export type Action =
   | "export:run"
   | "settings:manage"
   | "users:manage"
-  | "billing:manage";
+  | "billing:manage"
+  | "purchaseRequest:view"
+  | "purchaseRequest:manage"
+  | "purchaseOrder:view"
+  | "purchaseOrder:manage";
 
 /** The minimum a caller must supply. Accepts a full Prisma `User`. */
 export interface Actor {
@@ -66,6 +70,10 @@ const MATRIX: Record<Role, ReadonlySet<Action>> = {
     "settings:manage",
     "users:manage",
     "billing:manage",
+    "purchaseRequest:view",
+    "purchaseRequest:manage",
+    "purchaseOrder:view",
+    "purchaseOrder:manage",
   ]),
   [ROLES.APPROVER]: new Set<Action>([
     "invoice:view",
@@ -210,6 +218,8 @@ export const ROUTE_REQUIREMENTS: Array<{ prefix: string; action: Action }> = [
   { prefix: "/settings/billing", action: "billing:manage" },
   { prefix: "/settings/rules", action: "settings:manage" },
   { prefix: "/settings/organization", action: "settings:manage" },
+  { prefix: "/purchase-requests", action: "purchaseRequest:view" },
+  { prefix: "/purchase-orders", action: "purchaseOrder:view" },
 ];
 
 /** Returns the action guarding `pathname`, or null when it is open to all. */
